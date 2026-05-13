@@ -157,5 +157,18 @@ describe(
             local diff = expected - result
             assert.is.near(0, diff.mag, 0.001)
         end)
+
+        describe("__tostring", function()
+            it("builds the correct string for a simple Vec", function()
+                local v = vec(-1, 4, 2)
+                assert.are.equal("vec[-1, 4, 2]", tostring(v))
+            end)
+
+            it("builds the correct string when there are unset elements", function()
+                local v = vec(1, 2)
+                v[4] = 4
+                assert.are.equal("vec[1, 2, 0, 4]", tostring(v))
+            end)
+        end)
     end
 )

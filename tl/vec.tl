@@ -54,6 +54,7 @@ local record Vec is {number}
     metamethod __div: function(v: Vec, s: number): Vec
     metamethod __pow: function(a: Vec, b: Vec): Vec
     metamethod __len: function(v: Vec): integer
+    metamethod __tostring: function(self): string
 end
 
 local record InternalVec is {number}
@@ -319,6 +320,13 @@ vec_mt = {
     end,
     __len = function(v: Vec): integer
         return private[v].dim
+    end,
+    __tostring = function(v: Vec): string
+        local parts: {number} = {}
+        for i = 1, #v do
+            table.insert(parts, v[i])
+        end
+        return "vec[" .. table.concat(parts, ", ") .. "]"
     end
 }
 
