@@ -148,5 +148,14 @@ describe(
             local diff = expected - v
             assert.is.near(0, diff.mag, 0.001)
         end)
+
+        it("cross product calculates correctly", function()
+            local v1 = vec(1, 2, 3)
+            local v2 = vec(1, 5, 7)
+            local expected = vec(-1, -4, 3)
+            local result = v1^v2
+            local diff = expected - result
+            assert.is.near(0, diff.mag, 0.001)
+        end)
     end
 )
