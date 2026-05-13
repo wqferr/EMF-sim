@@ -124,5 +124,29 @@ describe(
                 end
             end)
         end)
+
+        it("frompolar constructs properly", function()
+            local mag = 5
+            local v = vec.frompolar(mag, 16/3 * math.pi)
+            local expected = mag * vec(-1/2, -math.sqrt(3)/2)
+            local diff = expected - v
+            assert.is.near(0, diff.mag, 0.0001)
+        end)
+
+        it("fromspherical constructs properly", function()
+            local mag = 3
+            local v = vec.fromspherical(mag, math.pi/4, math.pi/3)
+            local expected = vec(1.0607, 1.837, 2.1213)
+            local diff = expected - v
+            assert.is.near(0, diff.mag, 0.001)
+        end)
+
+        it("fromcylindrical constructs properly", function()
+            local r = 10
+            local v = vec.fromcylindrical(r, math.pi/6, 3)
+            local expected = vec(r * math.sqrt(3)/2, r/2, 3)
+            local diff = expected - v
+            assert.is.near(0, diff.mag, 0.001)
+        end)
     end
 )

@@ -15,16 +15,22 @@ local record VecModule
     fromarray: function(arr: {number}, n?: integer): Vec
     fromeuler: function(mag: number, angles: {number}|number): Vec
     frompolar: function(r: number, theta: number): Vec
-    fromspherical: function(r: number, theta: number, phi: number): Vec
+    fromspherical: function(r: number, polar: number, azimuth: number): Vec
     fromcylindrical: function(r: number, theta: number, z: number): Vec
     rotate: function(v: Vec, about: Vec, angle: number): Vec
     scale: function(v: Vec, scalar: number): Vec
     normalize: function(v: Vec): Vec
+    angle: function(a: Vec, b: Vec): number
     dot: function(v1: Vec, v2: Vec): number
     cross: function(v1: Vec, v2: Vec): Vec
     lerp: function(v1: Vec, v2: Vec, t: number): Vec
     metamethod __call: function(self, ...: number): Vec
 end
+
+local sqrt = math.sqrt
+local sin, cos = math.sin, math.cos
+local acos = math.acos
+local max = math.max
 
 local M: VecModule
 local record Vec is {number}
@@ -101,7 +107,7 @@ end
 
 local type CacheUpdateFunction = function(InternalVec)
 
-local function updateMagnitudes(p: InternalVec)
+local function updateMagSqr(p: InternalVec)
     local m = 0.0
     for i = 1, p.dim do
         local coord = p[i]
@@ -109,7 +115,10 @@ local function updateMagnitudes(p: InternalVec)
     end
 
     p.magsqr = m
-    p.mag = math.sqrt(m)
+end
+
+local function updateMag(p: InternalVec)
+    p.mag = sqrt(p.magsqr)
 end
 
 local function updateDimension(p: InternalVec)
@@ -132,8 +141,8 @@ end
 
 local cacheUpdaters: {string: CacheUpdateFunction} = {
     dim = updateDimension,
-    mag = updateMagnitudes,
-    magsqr = updateMagnitudes,
+    mag = updateMag,
+    magsqr = updateMagSqr,
     normalized = updateNormalized,
 }
 
@@ -323,7 +332,7 @@ M = {
     end,
     ones = function(n: integer, scalar?: number): Vec
         scalar = scalar or 1
-        local mag = math.sqrt(n * scalar * scalar)
+        local mag = sqrt(n * scalar * scalar)
         local v: {number} = {}
         for i = 1, n do
             v[i] = scalar
@@ -364,15 +373,18 @@ M = {
         return r2
     end,
     frompolar = function(r: number, theta: number): Vec
-        return M.new(r * math.cos(theta), r * math.sin(theta))
+        return M.new(r * cos(theta), r * sin(theta))
     end,
-    fromspherical = function(r: number, theta: number, phi: number): Vec
-        local v1 = M.new(r, 0, 0)
-        local v2 = M.rotate(v1, M.posy, phi)
-        return M.rotate(v2, M.posz, theta)
+    fromspherical = function(r: number, polar: number, azimuth: number): Vec
+        local sinpolar = sin(polar)
+        return M.new(
+            r * sinpolar * cos(azimuth),
+            r * sinpolar * sin(azimuth),
+            r * cos(polar)
+        )
     end,
     fromcylindrical = function(r: number, theta: number, z: number): Vec
-        return M.frompolar(r, theta) + M(0, 0, z)
+        return M.frompolar(r, theta) + M.new(0, 0, z)
     end,
     rotate = function(v: Vec, about: Vec, angle: number): Vec
         v = M.copy(v)
@@ -382,8 +394,8 @@ M = {
         local parallel = about * M.dot(v, about) / about.magsqr
         local orthogonal = v - parallel
         local cross = M.cross(about, orthogonal)
-        local x1 = math.cos(angle) / orthogonal.mag
-        local x2 = math.sin(angle) / cross.mag
+        local x1 = cos(angle) / orthogonal.mag
+        local x2 = sin(angle) / cross.mag
         local rotorth = orthogonal.mag * (x1*orthogonal + x2*cross)
         return parallel + rotorth
     end,
@@ -397,9 +409,12 @@ M = {
     normalize = function(v: Vec): Vec
         return v / v.mag
     end,
+    angle = function(v1: Vec, v2: Vec): number
+        return acos(M.dot(v1, v2) / (v1.mag * v2.mag))
+    end,
     dot = function(v1: Vec, v2: Vec): number
         v1, v2 = coerceToSameDimension(v1, v2)
-        local maxlen = math.max(#v1, #v2)
+        local maxlen = max(#v1, #v2)
         local d = 0.0
         for i = 1, maxlen do
             d = d + v1[i] * v2[i]
@@ -423,7 +438,7 @@ M = {
         )
     end,
     lerp = function(v1: Vec, v2: Vec, t: number): Vec
-        local n = math.max(#v1, #v2)
+        local n = max(#v1, #v2)
         local u = M.zeros(n)
         local m = 1 - t
 
