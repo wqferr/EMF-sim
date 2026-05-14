@@ -1,4 +1,4 @@
-local record VecModule
+local interface VecModule
     posx: Vec
     negx: Vec
     posy: Vec
@@ -33,12 +33,7 @@ local acos = math.acos
 local max = math.max
 
 local M: VecModule
-local record Vec is {number}
-    x: number
-    y: number
-    z: number
-    w: number
-
+global interface Vec is {number}
     -- Readonly mirrors of magnitude values
     dim: integer
     mag: number
@@ -55,6 +50,32 @@ local record Vec is {number}
     metamethod __pow: function(a: Vec, b: Vec): Vec
     metamethod __len: function(v: Vec): integer
     metamethod __tostring: function(self): string
+end
+
+global interface Vec1 is Vec
+    where self.dim == 1
+    x: number
+end
+
+global interface Vec2 is Vec
+    where self.dim == 2
+    x: number
+    y: number
+end
+
+global interface Vec3 is Vec
+    where self.dim == 3
+    x: number
+    y: number
+    z: number
+end
+
+global interface Vec4 is Vec
+    where self.dim >= 4
+    x: number
+    y: number
+    z: number
+    w: number
 end
 
 local record InternalVec is {number}
@@ -178,7 +199,7 @@ intvec_mt = {
     end
 }
 
-local function ensureDimension(v: {number}, n: integer)
+local function ensureDimension(v: Vec, n: integer)
     local p = private[v]
     if p.dim < n then
         p.dim = n
@@ -208,54 +229,6 @@ vec_mt = {
         local p = private[self] as {(integer|CachedProperty) : (number|integer|Vec)}
         return p[k]
     end,
-    -- __index = function(self: Vec, k): number|integer|Vec
-    --     if k is integer then
-    --         return rawget(self, k) or 0
-    --     elseif not k is string then
-    --         return nil
-    --     end
-
-    --     local idx = indicesFromLetters[k]
-    --     if idx then
-    --         local p = private[self]
-    --         local dim = p.dim
-    --         if 1 <= idx and idx <= dim then
-    --             return rawget(p, idx)
-    --         else
-    --             error(
-    --                 ("Index out of bounds: %d is not within dimension %d"):format(idx, dim),
-    --                 2
-    --             )
-    --         end
-    --     elseif k is ReadonlyField then
-    --         local fields = private[self] as {string: number|integer|Vec}
-    --         return fields[k]
-    --     elseif k is CachedProperty then
-    --         local fields = private[self] as {string: number|integer|Vec}
-    --         if not fields[k] then
-    --             local cacheUpdater = cacheUpdaters[k]
-    --             cacheUpdater(self)
-    --         end
-    --         return fields[k]
-    --     else
-    --         return nil
-    --     end
-    -- end,
-    -- __newindex = function(self: Vec, k: integer|string, v: any)
-    --     if k is integer then
-    --         ensureDimension(self, k)
-    --         rawset(self, k, v)
-    --         updateMagnitudes(self)
-    --     else
-    --         local idx = indicesFromLetters[k]
-    --         if not idx then
-    --             error("Invalid coordinate name: " .. k)
-    --         end
-    --         ensureDimension(self, idx)
-    --         rawset(self, idx, v)
-    --         updateMagnitudes(self)
-    --     end
-    -- end,
     __newindex = function(self: Vec, k: integer|CoordinateName, v: number)
         if not private[self] then
             private[self] = setmetatable({} as InternalVec, intvec_mt)
@@ -372,7 +345,7 @@ M = {
         if #angles > 3 then
             error("Only Euler angles (dimension 3) are supported", 2)
         end
-        ensureDimension(angles, 3)
+        angles = {angles[1] or 0, angles[2] or 0, angles[3] or 0}
         local x = M.new(mag, 0, 0)
         local zup = M.new(0, 0, 1)
         local r1 = M.rotate(x, zup, angles[1])
@@ -430,10 +403,7 @@ M = {
         return d
     end,
     cross = function(v1: Vec, v2: Vec): Vec
-        if #v1 > 3 then
-            error("Cross product must operate on 3 dimensions or less", 2)
-        end
-        if #v2 > 3 then
+        if #v1 > 3 or #v2 > 3 then
             error("Cross product must operate on 3 dimensions or less", 2)
         end
 
