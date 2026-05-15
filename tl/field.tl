@@ -1,5 +1,7 @@
 local vec = require "vec"
 
+local type FieldIndex = {integer, integer, integer}
+
 local interface Tensor is {Tensor}
     nidx: integer
 end
@@ -8,20 +10,16 @@ local interface State
     value: Vec3
     grad: Vec3
     curl: Vec3
-    div: Vec3
 end
 
-local interface Cell is Tensor
+local record Cell is Tensor
     where self.nidx == 0
-    idx: Field.Index
-
+    idx: FieldIndex
     next: State
     current: State
 end
 
 global record Field
-    type Index = {integer, integer, integer}
-
     values: Tensor
     dimensions: Vec3
     granularity: Vec3
@@ -29,56 +27,40 @@ global record Field
     value: function(self, p: Vec3): Vec3
     curl: function(self, p: Vec3): Vec3
     numCells: function(self, axis: integer): integer
-    setNext: function(self, p: Index, v: Vec3)
+    setNext: function(self, p: FieldIndex, v: Vec3)
     commit: function(self)
 end
 
-local findCell: function(Field, Vec3): Field.Index, Vec3
-local atIndex: function(Field, Field.Index): Cell
-local lerpTensor: function(Tensor, Field.Index, Vec3): Vec
+local type StateAccessor = function(field: Field, idx: FieldIndex): Vec3
+
+local findCell: function(Field, Vec3): FieldIndex, Vec3
+local atIndex: function(Field, FieldIndex): Cell
+local lerpTensor: function(Field, StateAccessor, FieldIndex, Vec3, integer): Vec
 local newState: function(): State
-local newCell: function(Field.Index): Cell
-local commitCell: function(Cell)
+local newCell: function(FieldIndex): Cell
+local cellCommit: function(Cell)
+local cellValue: StateAccessor
+local cellGrad: StateAccessor
+local cellCurl: StateAccessor
 local deriv: function(x0: number, x1: number, step: number): number
+
 
 function Field:value(p: Vec3): Vec3
     local idx, cellLocalCoords = findCell(self, p)
-    return lerpTensor(self.values, idx, cellLocalCoords) as Vec3
+    return lerpTensor(self, cellValue, idx, cellLocalCoords, 3) as Vec3
+end
+
+function Field:grad(p: Vec3): Vec3
+    local idx, cellLocalCoords = findCell(self, p)
+    return lerpTensor(self, cellGrad, idx, cellLocalCoords, 3) as Vec3
 end
 
 function Field:curl(pos: Vec3): Vec3
-    local idx, _ = findCell(self, pos)
-    local f = atIndex(self, idx).current
-    if f.curl then
-        return f.curl
-    end
-
-    local idxX: Field.Index = {idx[1]+1, idx[2], idx[3]}
-    local idxY: Field.Index = {idx[1], idx[2]+1, idx[3]}
-    local idxZ: Field.Index = {idx[1], idx[2], idx[3]+1}
-
-    local fP = f.value
-    local fX = atIndex(self, idxX).current.value
-    local fY = atIndex(self, idxY).current.value
-    local fZ = atIndex(self, idxZ).current.value
-    local granularity = self.granularity
-
-    local curl = vec.zeros(3) as Vec3
-
-    -- del_Fz/del_y - del_Fy/del_z
-    curl.x = deriv(fP.z, fY.z, granularity.y) - deriv(fP.y, fZ.y, granularity.z)
-
-    -- del_Fx/del_z - del_Fz/del_x
-    curl.y = deriv(fP.x, fZ.x, granularity.z) - deriv(fP.z, fX.z, granularity.x)
-
-    -- del_Fy/del_x - del_Fx/del_y
-    curl.z = deriv(fP.y, fX.y, granularity.x) - deriv(fP.x, fY.x, granularity.y)
-
-    f.curl = curl
-    return curl
+    local idx, cellLocalCoords = findCell(self, pos)
+    return lerpTensor(self, cellCurl, idx, cellLocalCoords, 3) as Vec3
 end
 
-function Field:stateAtIndex(idx: Field.Index): Cell
+function Field:stateAtIndex(idx: FieldIndex): Cell
     return self.values[idx[1]][idx[2]][idx[3]] as Cell
 end
 
@@ -96,7 +78,7 @@ function Field:numCells(axis: integer): integer
     return #t
 end
 
-function Field:setNext(index: Field.Index, v: Vec3)
+function Field:setNext(index: FieldIndex, v: Vec3)
     local cell = self.values[index[1]][index[2]][index[3]] as Cell
     cell.next = {value = v}
 end
@@ -105,14 +87,14 @@ function Field:commit()
     for _, plane in ipairs(self.values) do
         for _, row in ipairs(plane) do
             for _, cell in ipairs(row as {Cell}) do
-                commitCell(cell)
+                cellCommit(cell)
             end
         end
     end
 end
 
-function findCell(field: Field, p: Vec3): Field.Index, Vec3
-    local idx: Field.Index
+function findCell(field: Field, p: Vec3): FieldIndex, Vec3
+    local idx: FieldIndex
     local cellLocalCoords: Vec3 = vec.zeros(3) as Vec3
     for i = 1, 3 do
         idx[i] = math.floor(p[i] / field.granularity[i])
@@ -121,17 +103,24 @@ function findCell(field: Field, p: Vec3): Field.Index, Vec3
     return idx, cellLocalCoords
 end
 
-function lerpTensor(t: Tensor, idx: Field.Index, coords: Vec): Vec
-    if t.nidx == 0 then
-        return (t as Cell).current.value
+function lerpTensor(
+    field: Field,
+    getter: StateAccessor,
+    idx: FieldIndex,
+    coords: Vec,
+    remaining: integer
+): Vec
+    if remaining == 0 then
+        return getter(field, idx)
     end
-    local currIdx = idx[t.nidx]
-    local a = lerpTensor(t[currIdx], idx, coords)
-    local b = lerpTensor(t[currIdx+1], idx, coords)
-    return vec.lerp(a, b, coords[currIdx])
+    local neighborIdx = {table.unpack(idx)}
+    neighborIdx[remaining] = neighborIdx[remaining] + 1
+    local a = lerpTensor(field, getter, idx, coords, remaining-1)
+    local b = lerpTensor(field, getter, neighborIdx, coords, remaining-1)
+    return vec.lerp(a, b, coords[remaining])
 end
 
-function newCell(idx: Field.Index): Cell
+function newCell(idx: FieldIndex): Cell
     return {
         idx = idx,
         current = newState(),
@@ -145,8 +134,63 @@ function newState(): State
     }
 end
 
-function commitCell(cell: Cell)
+function cellCommit(cell: Cell)
     cell.next, cell.current = newState(), cell.next
+end
+
+cellValue = function(field: Field, idx: FieldIndex): Vec3
+    local f = atIndex(field, idx).current
+    if f.grad then
+        return f.grad
+    end
+
+    local idxX: FieldIndex = {idx[1]+1, idx[2], idx[3]}
+    local idxY: FieldIndex = {idx[1], idx[2]+1, idx[3]}
+    local idxZ: FieldIndex = {idx[1], idx[2], idx[3]+1}
+
+    local fP = f.value
+    local fX = atIndex(field, idxX).current.value
+    local fY = atIndex(field, idxY).current.value
+    local fZ = atIndex(field, idxZ).current.value
+    local granularity = field.granularity
+
+    f.grad = vec(
+        deriv(fP.x, fX.x, granularity.x),
+        deriv(fP.y, fY.y, granularity.y),
+        deriv(fP.z, fZ.z, granularity.z)
+    ) as Vec3
+    return f.grad
+end
+
+cellCurl = function(field: Field, idx: FieldIndex): Vec3
+    local f = atIndex(field, idx).current
+    if f.curl then
+        return f.curl
+    end
+
+    local idxX: FieldIndex = {idx[1]+1, idx[2], idx[3]}
+    local idxY: FieldIndex = {idx[1], idx[2]+1, idx[3]}
+    local idxZ: FieldIndex = {idx[1], idx[2], idx[3]+1}
+
+    local fP = f.value
+    local fX = atIndex(field, idxX).current.value
+    local fY = atIndex(field, idxY).current.value
+    local fZ = atIndex(field, idxZ).current.value
+    local granularity = field.granularity
+
+    local curl = vec.zeros(3) as Vec3
+
+    -- del_Fz/del_y - del_Fy/del_z
+    curl.x = deriv(fP.z, fY.z, granularity.y) - deriv(fP.y, fZ.y, granularity.z)
+
+    -- del_Fx/del_z - del_Fz/del_x
+    curl.y = deriv(fP.x, fZ.x, granularity.z) - deriv(fP.z, fX.z, granularity.x)
+
+    -- del_Fy/del_x - del_Fx/del_y
+    curl.z = deriv(fP.y, fX.y, granularity.x) - deriv(fP.x, fY.x, granularity.y)
+
+    f.curl = curl
+    return curl
 end
 
 function deriv(x0: number, x1: number, step: number): number
