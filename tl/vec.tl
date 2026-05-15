@@ -47,7 +47,6 @@ global interface Vec is {number}
     metamethod __mul: function(s: number, v: Vec): Vec
     metamethod __mul: function(a: Vec, b: Vec): number
     metamethod __div: function(v: Vec, s: number): Vec
-    metamethod __pow: function(a: Vec, b: Vec): Vec
     metamethod __len: function(v: Vec): integer
     metamethod __tostring: function(self): string
 end
@@ -55,12 +54,30 @@ end
 global interface Vec1 is Vec
     where self.dim == 1
     x: number
+
+    metamethod __add: function(a: Vec1, b: Vec1): Vec1
+    metamethod __sub: function(a: Vec1, b: Vec1): Vec1
+    metamethod __unm: function(v: Vec1): Vec1
+    metamethod __mul: function(v: Vec1, s: number): Vec1
+    metamethod __mul: function(s: number, v: Vec1): Vec1
+    metamethod __mul: function(a: Vec1, b: Vec1): number
+    metamethod __div: function(v: Vec1, s: number): Vec1
+    metamethod __pow: function(a: Vec1, b: Vec1): Vec3
 end
 
 global interface Vec2 is Vec
     where self.dim == 2
     x: number
     y: number
+
+    metamethod __add: function(a: Vec2, b: Vec2): Vec2
+    metamethod __sub: function(a: Vec2, b: Vec2): Vec2
+    metamethod __unm: function(v: Vec2): Vec2
+    metamethod __mul: function(v: Vec2, s: number): Vec2
+    metamethod __mul: function(s: number, v: Vec2): Vec2
+    metamethod __mul: function(a: Vec2, b: Vec2): number
+    metamethod __div: function(v: Vec2, s: number): Vec2
+    metamethod __pow: function(a: Vec2, b: Vec2): Vec3
 end
 
 global interface Vec3 is Vec
@@ -68,6 +85,15 @@ global interface Vec3 is Vec
     x: number
     y: number
     z: number
+
+    metamethod __add: function(a: Vec3, b: Vec3): Vec3
+    metamethod __sub: function(a: Vec3, b: Vec3): Vec3
+    metamethod __unm: function(v: Vec3): Vec3
+    metamethod __mul: function(v: Vec3, s: number): Vec3
+    metamethod __mul: function(s: number, v: Vec3): Vec3
+    metamethod __mul: function(a: Vec3, b: Vec3): number
+    metamethod __div: function(v: Vec3, s: number): Vec3
+    metamethod __pow: function(a: Vec3, b: Vec3): Vec3
 end
 
 global interface Vec4 is Vec
@@ -76,6 +102,14 @@ global interface Vec4 is Vec
     y: number
     z: number
     w: number
+
+    metamethod __add: function(a: Vec2, b: Vec2): Vec2
+    metamethod __sub: function(a: Vec2, b: Vec2): Vec2
+    metamethod __unm: function(v: Vec2): Vec2
+    metamethod __mul: function(v: Vec2, s: number): Vec2
+    metamethod __mul: function(s: number, v: Vec2): Vec2
+    metamethod __mul: function(a: Vec2, b: Vec2): number
+    metamethod __div: function(v: Vec2, s: number): Vec2
 end
 
 local record InternalVec is {number}
