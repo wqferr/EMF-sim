@@ -16,15 +16,16 @@ local interface VecModule
     new: function(number, number, number, number): Vec4
     new: function(...: number): Vec
 
-    copy: function(v: Vec): Vec
+    copy: function<NVec is Vec>(v: NVec): NVec
     fromarray: function(arr: {number}, n?: integer): Vec
-    fromeuler: function(mag: number, angles: {number}|number): Vec
-    frompolar: function(r: number, theta: number): Vec
+    fromeuler: function(mag: number, angles: {number}|number): Vec2|Vec3
+    frompolar: function(r: number, theta: number): Vec2
     fromspherical: function(r: number, polar: number, azimuth: number): Vec
     fromcylindrical: function(r: number, theta: number, z: number): Vec
 
     dim: function(Vec): integer
     ipairs: function(Vec): (function({number}, integer): (integer, number), {number}, integer)
+    round: function<NVec is Vec>(v: NVec): NVec
 
     rotate: function(v: Vec3|Vec2|Vec1, about: Vec3|Vec2|Vec1, angle: number): Vec3
     scale: function<NVec is Vec>(v: NVec, scalar: number): NVec
@@ -34,7 +35,7 @@ local interface VecModule
 
     angle: function(a: Vec, b: Vec): number
     dot: function(v1: Vec, v2: Vec): number
-    cross: function(v1: Vec, v2: Vec): Vec
+    cross: function(v1: Vec, v2: Vec): Vec3
     lerp: function(v1: Vec, v2: Vec, t: number): Vec
 
     project: function<NVec is Vec>(v: Vec, onto: NVec): NVec
@@ -50,6 +51,7 @@ end
 local sqrt = math.sqrt
 local sin, cos = math.sin, math.cos
 local acos = math.acos
+local floor = math.floor
 
 local M: VecModule
 global interface Vec is {number}
@@ -152,6 +154,10 @@ setmetatable(private, {__mode = "k"})
 local vec_mt: metatable<Vec>
 local intvec_mt: metatable<InternalVec>
 
+local function round(x: number): integer
+    return floor(x+0.5)
+end
+
 local function fromArray(v: {number}, n: integer, mag: number|nil): Vec
     local p: InternalVec = {dim=n}
     for i = 1, n do
@@ -214,6 +220,8 @@ local function updateNormalized(p: InternalVec)
     if p.mag > 0 then
         p.normalized = (p.normalized as Vec) / p.mag
     end
+    -- Idempotent normalization
+    private[p.normalized].normalized = p.normalized
 end
 
 local function invalidateCache(v: Vec)
@@ -236,10 +244,7 @@ intvec_mt = {
             if 1 <= k and k <= self.dim then
                 return 0
             else
-                error(
-                    ("Index out of bounds: %d is not within dimension %d"):format(k, self.dim),
-                    2
-                )
+                return nil
             end
         else
             local updater = cacheUpdaters[k]
@@ -449,7 +454,7 @@ M = {
         )
     end,
     fromcylindrical = function(r: number, theta: number, z: number): Vec
-        return M.frompolar(r, theta) + M.new(0, 0, z)
+        return M.frompolar(r, theta) as Vec3 + M.new(0, 0, z)
     end,
     dim = function(v: Vec): integer
         return private[v].dim
@@ -465,7 +470,15 @@ M = {
         end
         return iter, private[v], 0
     end,
-    rotate = function(v: Vec, about: Vec, angle: number): Vec3
+    round = function(v: Vec): Vec
+        local new = M.zeros(v.dim)
+        local p = private[new]
+        for i = 1, v.dim do
+            p[i] = round(v[i])
+        end
+        return new
+    end,
+    rotate = function(v: Vec1|Vec2|Vec3, about: Vec1|Vec2|Vec3, angle: number): Vec3
         if v.dim > 3 or about.dim > 3 then
             error(
                 (
@@ -478,6 +491,8 @@ M = {
 
         ensureDimension(v, 3)
         ensureDimension(about, 3)
+        v = v as Vec3
+        about = about as Vec3
         -- https://math.stackexchange.com/questions/511370/how-to-rotate-one-vector-about-another
         local parallel = M.project(v, about)
         local orthogonal = v - parallel
@@ -515,7 +530,10 @@ M = {
         return scaled
     end,
     flatResize = function(v: Vec, by: number): Vec
-        local scalar = (v.mag - by) / v.mag
+        if v.mag + by <= 0 then
+            return M.zeros(v.dim)
+        end
+        local scalar = (v.mag + by) / v.mag
         return M.scale(v, scalar)
     end,
     normalize = function(v: Vec): Vec

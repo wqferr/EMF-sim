@@ -60,7 +60,6 @@ global type love = record
 	mousemoved: function(x: number, y: number, dx: number, dy: number, istouch: boolean)
 	mousepressed: function(x: number, y: number, button: number, istouch: boolean, presses: number)
 	mousereleased: function(x: number, y: number, button: number, istouch: boolean, presses: number)
-	quit: function(): boolean
 	resize: function(w: number, h: number)
 	run: function(): function(): number|string|nil
 	textedited: function(text: string, start: number, length: number)
@@ -275,16 +274,14 @@ global type love = record
 		newDataView: function(data: love.Data, offset: number, size: number): love.Data
 		pack: function(container: ContainerType, format: string, ...: any): string|ByteData
 		unpack: function(format: string, data: string|love.Data, pos: number): any...
-
 	end
 	type event = record
 		clear: function()
 		poll: function(): function(): string, any...
 		pump: function()
 		push: function(n: string, ...: any)
-		quit: function(exitstatus: number|string)
+		quit: function(exitstatus?: number|string)
 		wait: function(): string, any...
-
 	end
 	type filesystem = record
 		type BufferMode = enum
@@ -392,7 +389,6 @@ global type love = record
 		unmount: function(archive: string): boolean
 		write: function(name: string, data: string, size?: number): boolean, string
 		write: function(name: string, data: love.Data, size?: number): boolean, string
-
 	end
 	type font = record
 		type HintingMode = enum
@@ -442,7 +438,6 @@ global type love = record
 		newTrueTypeRasterizer: function(size?: number, hinting?: HintingMode, dpiscale?: number): Rasterizer
 		newTrueTypeRasterizer: function(fileName: string, size?: number, hinting?: HintingMode, dpiscale?: number): Rasterizer
 		newTrueTypeRasterizer: function(fileData: filesystem.FileData, size?: number, hinting?: HintingMode, dpiscale?: number): Rasterizer
-
 	end
 	type graphics = record
 		type AlignMode = enum
@@ -1693,7 +1688,6 @@ global type love = record
 		setKeyRepeat: function(enable: boolean)
 		setTextInput: function(enable: boolean)
 		setTextInput: function(enable: boolean, x: number, y: number, w: number, h: number)
-
 	end
 	type math = record
 		type MatrixLayout = enum
@@ -1785,7 +1779,6 @@ global type love = record
 		setRandomState: function(state: string)
 		triangulate: function(polygon: {number}): {number}
 		triangulate: function(...: number): {number}
-
 	end
 	type mouse = record
 		type CursorType = enum
