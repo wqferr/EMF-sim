@@ -10,20 +10,39 @@ local interface VecModule
 
     zeros: function(n: integer): Vec
     ones: function(n: integer, scalar?: number): Vec
+    new: function(number): Vec1
+    new: function(number, number): Vec2
+    new: function(number, number, number): Vec3
+    new: function(number, number, number, number): Vec4
     new: function(...: number): Vec
+
     copy: function(v: Vec): Vec
     fromarray: function(arr: {number}, n?: integer): Vec
     fromeuler: function(mag: number, angles: {number}|number): Vec
     frompolar: function(r: number, theta: number): Vec
     fromspherical: function(r: number, polar: number, azimuth: number): Vec
     fromcylindrical: function(r: number, theta: number, z: number): Vec
+
+    ipairs: function(Vec): (function({number}, integer): (integer, number), {number}, integer)
+
     rotate: function(v: Vec, about: Vec, angle: number): Vec
-    scale: function(v: Vec, scalar: number): Vec
-    normalize: function(v: Vec): Vec
+    scale: function<NVec is Vec>(v: NVec, scalar: number): NVec
+    flatResize: function<NVec is Vec>(v: NVec, by: number): NVec
+
+    normalize: function<NVec is Vec>(v: NVec): NVec
+
     angle: function(a: Vec, b: Vec): number
     dot: function(v1: Vec, v2: Vec): number
     cross: function(v1: Vec, v2: Vec): Vec
     lerp: function(v1: Vec, v2: Vec, t: number): Vec
+
+    project: function<NVec is Vec>(v: Vec, onto: NVec): NVec
+    projectHyperplane: function(v: Vec, hyperplaneNormal: Vec): Vec
+
+    metamethod __call: function(self, number): Vec1
+    metamethod __call: function(self, number, number): Vec2
+    metamethod __call: function(self, number, number, number): Vec3
+    metamethod __call: function(self, number, number, number, number): Vec4
     metamethod __call: function(self, ...: number): Vec
 end
 
@@ -55,6 +74,8 @@ global interface Vec1 is Vec
     where self.dim == 1
     x: number
 
+    normalized: Vec1
+
     metamethod __add: function(a: Vec1, b: Vec1): Vec1
     metamethod __sub: function(a: Vec1, b: Vec1): Vec1
     metamethod __unm: function(v: Vec1): Vec1
@@ -69,6 +90,8 @@ global interface Vec2 is Vec
     where self.dim == 2
     x: number
     y: number
+
+    normalized: Vec2
 
     metamethod __add: function(a: Vec2, b: Vec2): Vec2
     metamethod __sub: function(a: Vec2, b: Vec2): Vec2
@@ -85,6 +108,8 @@ global interface Vec3 is Vec
     x: number
     y: number
     z: number
+
+    normalized: Vec3
 
     metamethod __add: function(a: Vec3, b: Vec3): Vec3
     metamethod __sub: function(a: Vec3, b: Vec3): Vec3
@@ -103,6 +128,8 @@ global interface Vec4 is Vec
     z: number
     w: number
 
+    normalized: Vec4
+
     metamethod __add: function(a: Vec2, b: Vec2): Vec2
     metamethod __sub: function(a: Vec2, b: Vec2): Vec2
     metamethod __unm: function(v: Vec2): Vec2
@@ -114,9 +141,9 @@ end
 
 local record InternalVec is {number}
     dim: integer
-    mag: number|nil
-    magsqr: number|nil
-    normalized: Vec|nil
+    mag: number
+    magsqr: number
+    normalized: Vec
 end
 
 local private: {Vec: InternalVec} = {}
@@ -125,13 +152,15 @@ setmetatable(private, {__mode = "k"})
 local vec_mt: metatable<Vec>
 local intvec_mt: metatable<InternalVec>
 
-local function fromArrWithMag(v: {number}, n: integer, mag: number): Vec
+local function fromArray(v: {number}, n: integer, mag: number|nil): Vec
     local p: InternalVec = {}
     for i = 1, n do
         p[i] = v[i] or 0
     end
-    p.mag = mag
-    p.magsqr = mag*mag
+    if mag then
+        p.mag = mag
+        p.magsqr = mag*mag
+    end
     p.dim = n
     setmetatable(p, intvec_mt)
 
@@ -182,7 +211,7 @@ local function updateDimension(p: InternalVec)
 end
 
 local function updateNormalized(p: InternalVec)
-    p.normalized = fromArrWithMag(p, p.dim, p.mag)
+    p.normalized = fromArray(p, p.dim, p.mag)
     if p.mag > 0 then
         p.normalized = (p.normalized as Vec) / p.mag
     end
@@ -337,13 +366,35 @@ vec_mt = {
     end
 }
 
+global enum AxisName
+    "posx"
+    "negx"
+    "posy"
+    "negy"
+    "posz"
+    "negz"
+    "posw"
+    "negw"
+end
+
+local axes: {AxisName: Vec4} = {
+    posx = fromArray({1, 0, 0, 0}, 4, 1) as Vec4,
+    negx = fromArray({-1, 0, 0, 0}, 4, 1) as Vec4,
+    posy = fromArray({0, 1, 0, 0}, 4, 1) as Vec4,
+    negy = fromArray({0, -1, 0, 0}, 4, 1) as Vec4,
+    posz = fromArray({0, 0, 1, 0}, 4, 1) as Vec4,
+    negz = fromArray({0, 0, -1, 0}, 4, 1) as Vec4,
+    posw = fromArray({0, 0, 0, 1}, 4, 1) as Vec4,
+    negw = fromArray({0, 0, 0, -1}, 4, 1) as Vec4,
+}
+
 M = {
     zeros = function(n: integer): Vec
         local v: {number} = {}
         for i = 1, n do
             v[i] = 0
         end
-        return fromArrWithMag(v, n, 0)
+        return fromArray(v, n, 0)
     end,
     ones = function(n: integer, scalar?: number): Vec
         scalar = scalar or 1
@@ -352,14 +403,14 @@ M = {
         for i = 1, n do
             v[i] = scalar
         end
-        return fromArrWithMag(v, n, mag)
+        return fromArray(v, n, mag)
     end,
     new = function(...: number): Vec
         return M.fromarray({...}, select("#", ...))
     end,
     copy = function(v: Vec): Vec
         local p = private[v]
-        return fromArrWithMag(p, p.dim, p.mag)
+        return fromArray(p, p.dim, p.mag)
     end,
     fromarray = function(arr: {number}, n?: integer): Vec
         if not n then
@@ -401,25 +452,60 @@ M = {
     fromcylindrical = function(r: number, theta: number, z: number): Vec
         return M.frompolar(r, theta) + M.new(0, 0, z)
     end,
+    ipairs = function(v: Vec): (function({number}, integer): (integer, number), {number}, integer)
+        local function iter(arr: {number}, i: integer): integer, number
+            i = i+1
+            if i < #v then
+                return i, arr[i]
+            else
+                return nil, nil
+            end
+        end
+        return iter, private[v], 0
+    end,
     rotate = function(v: Vec, about: Vec, angle: number): Vec
         v = M.copy(v)
         about = M.copy(about)
         ensureSameDimension(v, about)
         -- https://math.stackexchange.com/questions/511370/how-to-rotate-one-vector-about-another
-        local parallel = about * M.dot(v, about) / about.magsqr
+        local parallel = M.project(v, about)
         local orthogonal = v - parallel
         local cross = M.cross(about, orthogonal)
         local x1 = cos(angle) / orthogonal.mag
         local x2 = sin(angle) / cross.mag
         local rotorth = orthogonal.mag * (x1*orthogonal + x2*cross)
-        return parallel + rotorth
+        local result = parallel + rotorth
+
+        local p = private[v]
+        local pr = private[result]
+        if rawget(p, "magsqr") then
+            pr.magsqr = p.magsqr
+        end
+        if rawget(p, "mag") then
+            pr.mag = p.mag
+        end
+        return result
     end,
     scale = function(v: Vec, scalar: number): Vec
         local u: {number} = {}
         for i = 1, #v do
             u[i] = scalar * v[i]
         end
-        return fromArrWithMag(u, private[v].dim, scalar * v.mag)
+        local pv = private[v]
+        local scaled = fromArray(u, pv.dim, nil)
+        local norm = rawget(pv, "normalized")
+        if norm then
+            if scalar > 0 then
+                private[scaled].normalized = norm
+            else
+                private[scaled].normalized = -norm
+            end
+        end
+        return scaled
+    end,
+    flatResize = function(v: Vec, by: number): Vec
+        local scalar = (v.mag - by) / v.mag
+        return M.scale(v, scalar)
     end,
     normalize = function(v: Vec): Vec
         return v / v.mag
@@ -451,24 +537,36 @@ M = {
     end,
     lerp = function(v1: Vec, v2: Vec, t: number): Vec
         local n = max(#v1, #v2)
-        local u = M.zeros(n)
+        local p1, p2 = private[v1], private[v2]
+        local r = M.zeros(n)
         local m = 1 - t
+        local pr = private[r]
 
         for i = 1, n do
-            rawset(u, i, v1[i]*m + v2[i]*t)
+            rawset(pr, i, p1[i]*m + p2[i]*t)
         end
 
-        return u
+        return r
+    end,
+    project = function(v: Vec, onto: Vec): Vec
+        return onto * (M.dot(v, onto) / onto.magsqr)
+    end,
+    projectHyperplane = function(v: Vec, hyperplaneNormal: Vec): Vec
+        local ontoNormal = M.project(v, hyperplaneNormal)
+        return v - ontoNormal
     end
 }
-M.posx = M.new(1, 0, 0, 0)
-M.negx = M.new(-1, 0, 0, 0)
-M.posy = M.new(0, 1, 0, 0)
-M.negy = M.new(0, -1, 0, 0)
-M.posz = M.new(0, 0, 1, 0)
-M.negz = M.new(0, 0, -1, 0)
-M.posw = M.new(0, 0, 0, 1)
-M.negw = M.new(0, 0, 0, -1)
+
+setmetatable(M, {
+    __index = function(_, k: AxisName): Vec
+        local ax = axes[k]
+        if ax then
+            return M.copy(ax)
+        else
+            return nil
+        end
+    end
+})
 
 local pubM: VecModule = {}
 setmetatable(pubM, {

@@ -12,7 +12,7 @@ local interface State
     curl: Vec3
 end
 
-local record Cell is Tensor
+local interface Cell is Tensor
     where self.nidx == 0
     idx: FieldIndex
     next: State
@@ -27,7 +27,7 @@ global record Field
     value: function(self, p: Vec3): Vec3
     curl: function(self, p: Vec3): Vec3
     numCells: function(self, axis: integer): integer
-    setNext: function(self, p: FieldIndex, v: Vec3)
+    setNext: function(self, p: Vec3, v: Vec3)
     commit: function(self)
 end
 
@@ -60,10 +60,6 @@ function Field:curl(pos: Vec3): Vec3
     return lerpTensor(self, cellCurl, idx, cellLocalCoords, 3) as Vec3
 end
 
-function Field:stateAtIndex(idx: FieldIndex): Cell
-    return self.values[idx[1]][idx[2]][idx[3]] as Cell
-end
-
 function Field:numCells(axis: integer): integer
     local t = self.values
     if axis > t.nidx then
@@ -78,27 +74,36 @@ function Field:numCells(axis: integer): integer
     return #t
 end
 
-function Field:setNext(index: FieldIndex, v: Vec3)
+function Field:setNext(p: Vec3, v: Vec3)
+    local index, localCoords = findCell(self, p)
+    for i, x in vec.ipairs(localCoords) do
+        if x > 0.5 then
+            index[i] = index[i] + 1
+        end
+    end
     local cell = self.values[index[1]][index[2]][index[3]] as Cell
     cell.next = {value = v}
 end
 
 function Field:commit()
-    for _, plane in ipairs(self.values) do
-        for _, row in ipairs(plane) do
-            for _, cell in ipairs(row as {Cell}) do
-                cellCommit(cell)
+    for i = 1, #self.values do
+        local plane = self.values[i]
+        for j = 1, #plane do
+            local row = plane[j]
+            for k = 1, #row do
+                cellCommit(row[k] as Cell)
             end
         end
     end
 end
 
 function findCell(field: Field, p: Vec3): FieldIndex, Vec3
-    local idx: FieldIndex
+    local idx: FieldIndex = {}
     local cellLocalCoords: Vec3 = vec.zeros(3) as Vec3
     for i = 1, 3 do
-        idx[i] = math.floor(p[i] / field.granularity[i])
-        cellLocalCoords[i] = p[i] / field.granularity[i] - idx[i]
+        local zeroBasedIdx = math.floor(p[i] / field.granularity[i])
+        cellLocalCoords[i] = (p[i] / field.granularity[i]) - zeroBasedIdx
+        idx[i] = 1 + zeroBasedIdx
     end
     return idx, cellLocalCoords
 end
@@ -134,11 +139,19 @@ function newState(): State
     }
 end
 
+function atIndex(field: Field, idx: FieldIndex): Cell
+    return field.values[idx[1]][idx[2]][idx[3]] as Cell
+end
+
 function cellCommit(cell: Cell)
     cell.next, cell.current = newState(), cell.next
 end
 
 cellValue = function(field: Field, idx: FieldIndex): Vec3
+    return atIndex(field, idx).current.value
+end
+
+cellGrad = function(field: Field, idx: FieldIndex): Vec3
     local f = atIndex(field, idx).current
     if f.grad then
         return f.grad

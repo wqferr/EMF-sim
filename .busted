@@ -1,0 +1,7 @@
+os.execute("make")
+return {
+    _all = {
+        lpath = "./build/?.lua;./build/?/?.lua;./build/?/init.lua",
+        ["defer-print"] = true
+    }
+}
