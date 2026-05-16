@@ -1,10 +1,10 @@
 local interface VecModule
-    posx: Vec
-    negx: Vec
-    posy: Vec
-    negy: Vec
-    posz: Vec
-    negz: Vec
+    posx: Vec3
+    negx: Vec3
+    posy: Vec3
+    negy: Vec3
+    posz: Vec3
+    negz: Vec3
     posw: Vec
     negw: Vec
 
@@ -26,7 +26,7 @@ local interface VecModule
     dim: function(Vec): integer
     ipairs: function(Vec): (function({number}, integer): (integer, number), {number}, integer)
 
-    rotate: function(v: Vec, about: Vec, angle: number): Vec
+    rotate: function(v: Vec3|Vec2|Vec1, about: Vec3|Vec2|Vec1, angle: number): Vec3
     scale: function<NVec is Vec>(v: NVec, scalar: number): NVec
     flatResize: function<NVec is Vec>(v: NVec, by: number): NVec
 
@@ -50,7 +50,6 @@ end
 local sqrt = math.sqrt
 local sin, cos = math.sin, math.cos
 local acos = math.acos
-local max = math.max
 
 local M: VecModule
 global interface Vec is {number}
@@ -385,12 +384,12 @@ global enum AxisName
 end
 
 local axes: {AxisName: Vec4} = {
-    posx = fromArray({1, 0, 0, 0}, 4, 1) as Vec4,
-    negx = fromArray({-1, 0, 0, 0}, 4, 1) as Vec4,
-    posy = fromArray({0, 1, 0, 0}, 4, 1) as Vec4,
-    negy = fromArray({0, -1, 0, 0}, 4, 1) as Vec4,
-    posz = fromArray({0, 0, 1, 0}, 4, 1) as Vec4,
-    negz = fromArray({0, 0, -1, 0}, 4, 1) as Vec4,
+    posx = fromArray({1, 0, 0}, 3, 1) as Vec4,
+    negx = fromArray({-1, 0, 0}, 3, 1) as Vec4,
+    posy = fromArray({0, 1, 0}, 3, 1) as Vec4,
+    negy = fromArray({0, -1, 0}, 3, 1) as Vec4,
+    posz = fromArray({0, 0, 1}, 3, 1) as Vec4,
+    negz = fromArray({0, 0, -1}, 3, 1) as Vec4,
     posw = fromArray({0, 0, 0, 1}, 4, 1) as Vec4,
     negw = fromArray({0, 0, 0, -1}, 4, 1) as Vec4,
 }
@@ -466,8 +465,19 @@ M = {
         end
         return iter, private[v], 0
     end,
-    rotate = function(v: Vec, about: Vec, angle: number): Vec
-        v, about = coerceToSameDimension(v, about)
+    rotate = function(v: Vec, about: Vec, angle: number): Vec3
+        if v.dim > 3 or about.dim > 3 then
+            error(
+                (
+                    "Only 3-dimensional rotations are supported"
+                    .. " (got vectors with dimension %d and %d)"
+                ):format(v.dim, about.dim),
+                2
+            )
+        end
+
+        ensureDimension(v, 3)
+        ensureDimension(about, 3)
         -- https://math.stackexchange.com/questions/511370/how-to-rotate-one-vector-about-another
         local parallel = M.project(v, about)
         local orthogonal = v - parallel
@@ -485,7 +495,7 @@ M = {
         if rawget(p, "mag") then
             pr.mag = p.mag
         end
-        return result
+        return result as Vec3
     end,
     scale = function(v: Vec, scalar: number): Vec
         local u: {number} = {}

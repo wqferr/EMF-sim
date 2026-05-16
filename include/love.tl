@@ -52,7 +52,6 @@ global type love = record
 	joystickpressed: function(joystick: joystick.Joystick, button: number)
 	joystickreleased: function(joystick: joystick.Joystick, button: number)
 	joystickremoved: function(joystick: joystick.Joystick)
-	keypressed: function(key: keyboard.KeyConstant, scancode: keyboard.Scancode, isrepeat: boolean)
 	keypressed: function(key: keyboard.KeyConstant, isrepeat: boolean)
 	keyreleased: function(key: keyboard.KeyConstant, scancode: keyboard.Scancode)
 	load: function(arg: {string}, unfilteredArg: {string})
