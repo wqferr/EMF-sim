@@ -23,6 +23,7 @@ local interface VecModule
     fromspherical: function(r: number, polar: number, azimuth: number): Vec
     fromcylindrical: function(r: number, theta: number, z: number): Vec
 
+    dim: function(Vec): integer
     ipairs: function(Vec): (function({number}, integer): (integer, number), {number}, integer)
 
     rotate: function(v: Vec, about: Vec, angle: number): Vec
@@ -153,7 +154,7 @@ local vec_mt: metatable<Vec>
 local intvec_mt: metatable<InternalVec>
 
 local function fromArray(v: {number}, n: integer, mag: number|nil): Vec
-    local p: InternalVec = {}
+    local p: InternalVec = {dim=n}
     for i = 1, n do
         p[i] = v[i] or 0
     end
@@ -161,7 +162,6 @@ local function fromArray(v: {number}, n: integer, mag: number|nil): Vec
         p.mag = mag
         p.magsqr = mag*mag
     end
-    p.dim = n
     setmetatable(p, intvec_mt)
 
     local clone = setmetatable({} as Vec, vec_mt)
@@ -311,26 +311,33 @@ vec_mt = {
     end,
     __add = function(a: Vec, b: Vec): Vec
         a, b = coerceToSameDimension(a, b)
+        local pa, pb = private[a], private[b]
         local v: {number} = {}
-        for i = 1, #a do
-            v[i] = a[i] + b[i]
+        for i = 1, pa.dim do
+            v[i] = pa[i] + pb[i]
         end
-        return M.fromarray(v)
+        return fromArray(v, pa.dim, nil)
     end,
     __sub = function(a: Vec, b: Vec): Vec
         a, b = coerceToSameDimension(a, b)
+        local pa, pb = private[a], private[b]
         local v: {number} = {}
-        for i = 1, #a do
-            v[i] = a[i] - b[i]
+        for i = 1, pa.dim do
+            v[i] = pa[i] - pb[i]
         end
-        return M.fromarray(v)
+        return fromArray(v, pa.dim, nil)
     end,
     __unm = function(v: Vec): Vec
         local u: {number} = {}
-        for i = 1, #v do
-            u[i] = -v[i]
+        local p = private[v]
+        for i = 1, p.dim do
+            u[i] = -p[i]
         end
-        return M.fromarray(u)
+        if rawget(p, "mag") then
+            return fromArray(u, p.dim, p.mag)
+        else
+            return fromArray(u, p.dim, nil)
+        end
     end,
     __mul = function(a: Vec|number, b: Vec|number): Vec|number
         if a is Vec then
@@ -359,7 +366,7 @@ vec_mt = {
     end,
     __tostring = function(v: Vec): string
         local parts: {number} = {}
-        for i = 1, #v do
+        for i = 1, v.dim do
             table.insert(parts, v[i])
         end
         return "vec[" .. table.concat(parts, ", ") .. "]"
@@ -406,7 +413,7 @@ M = {
         return fromArray(v, n, mag)
     end,
     new = function(...: number): Vec
-        return M.fromarray({...}, select("#", ...))
+        return fromArray({...}, select("#", ...), nil)
     end,
     copy = function(v: Vec): Vec
         local p = private[v]
@@ -416,14 +423,7 @@ M = {
         if not n then
             n = #arr
         end
-        local v: Vec = setmetatable({}, vec_mt)
-        local p: InternalVec = {dim = n}
-        for i = 1, n do
-            p[i] = arr[i]
-        end
-        setmetatable(p, intvec_mt)
-        private[v] = p
-        return v
+        return fromArray(arr, n, nil)
     end,
     fromeuler = function(mag: number, angles_: {number}|number): Vec
         local angles: {number} = angles_ is number and {angles_} or angles_
@@ -452,10 +452,13 @@ M = {
     fromcylindrical = function(r: number, theta: number, z: number): Vec
         return M.frompolar(r, theta) + M.new(0, 0, z)
     end,
+    dim = function(v: Vec): integer
+        return private[v].dim
+    end,
     ipairs = function(v: Vec): (function({number}, integer): (integer, number), {number}, integer)
-        local function iter(arr: {number}, i: integer): integer, number
+        local function iter(arr: InternalVec, i: integer): integer, number
             i = i+1
-            if i < #v then
+            if i < arr.dim then
                 return i, arr[i]
             else
                 return nil, nil
@@ -464,9 +467,7 @@ M = {
         return iter, private[v], 0
     end,
     rotate = function(v: Vec, about: Vec, angle: number): Vec
-        v = M.copy(v)
-        about = M.copy(about)
-        ensureSameDimension(v, about)
+        v, about = coerceToSameDimension(v, about)
         -- https://math.stackexchange.com/questions/511370/how-to-rotate-one-vector-about-another
         local parallel = M.project(v, about)
         local orthogonal = v - parallel
@@ -488,12 +489,12 @@ M = {
     end,
     scale = function(v: Vec, scalar: number): Vec
         local u: {number} = {}
-        for i = 1, #v do
-            u[i] = scalar * v[i]
+        local p = private[v]
+        for i = 1, p.dim do
+            u[i] = scalar * p[i]
         end
-        local pv = private[v]
-        local scaled = fromArray(u, pv.dim, nil)
-        local norm = rawget(pv, "normalized")
+        local scaled = fromArray(u, p.dim, nil)
+        local norm = rawget(p, "normalized")
         if norm then
             if scalar > 0 then
                 private[scaled].normalized = norm
@@ -515,34 +516,35 @@ M = {
     end,
     dot = function(v1: Vec, v2: Vec): number
         v1, v2 = coerceToSameDimension(v1, v2)
-        local maxlen = max(#v1, #v2)
+        local p1, p2 = private[v1], private[v2]
         local d = 0.0
-        for i = 1, maxlen do
-            d = d + v1[i] * v2[i]
+        for i = 1, p1.dim do
+            d = d + p1[i] * p2[i]
         end
         return d
     end,
     cross = function(v1: Vec, v2: Vec): Vec
-        if #v1 > 3 or #v2 > 3 then
+        local p1, p2 = private[v1], private[v2]
+        if p1.dim > 3 or p2.dim > 3 then
             error("Cross product must operate on 3 dimensions or less", 2)
         end
 
         ensureDimension(v1, 3)
         ensureDimension(v2, 3)
         return M.new(
-            v1[2]*v2[3] - v1[3]*v2[2],
-            v1[3]*v2[1] - v1[1]*v2[3],
-            v1[1]*v2[2] - v1[2]*v2[1]
+            p1[2]*p2[3] - p1[3]*p2[2],
+            p1[3]*p2[1] - p1[1]*p2[3],
+            p1[1]*p2[2] - p1[2]*p2[1]
         )
     end,
     lerp = function(v1: Vec, v2: Vec, t: number): Vec
-        local n = max(#v1, #v2)
+        v1, v2 = coerceToSameDimension(v1, v2)
         local p1, p2 = private[v1], private[v2]
-        local r = M.zeros(n)
+        local r = M.zeros(p1.dim)
         local m = 1 - t
         local pr = private[r]
 
-        for i = 1, n do
+        for i = 1, p1.dim do
             rawset(pr, i, p1[i]*m + p2[i]*t)
         end
 

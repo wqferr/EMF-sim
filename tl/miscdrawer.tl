@@ -6,6 +6,8 @@ global record MiscDrawer
     vecXYMaxRadius: number
 end
 
+local md_mt: metatable<MiscDrawer> = {__index = MiscDrawer}
+
 function MiscDrawer:drawVecNormalized(screenPos: Vec2, v: Vec3)
     v = v.normalized
     local maxIntoOutofAreaOverPi = self.vecIntoOutofMarkerMaxRadius * self.vecIntoOutofMarkerMaxRadius
@@ -27,9 +29,9 @@ function MiscDrawer:drawVecNormalized(screenPos: Vec2, v: Vec3)
 end
 
 return function(): MiscDrawer
-    return {
+    return setmetatable({
         vecLineThickness = 2,
         vecIntoOutofMarkerMaxRadius = 12,
         vecXYMaxRadius = 50
-    }
+    }, md_mt)
 end
