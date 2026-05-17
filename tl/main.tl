@@ -1,16 +1,19 @@
 local vec = require "vec"
+local field = require "field"
 local md = require "miscdrawer"
 
-local myVec: Vec3
+local electricField: Field
 local screenCenter: Vec2
 local miscDrawer: MiscDrawer
 function love.load(args: {string}, unfiltered_args: {string})
     local _, _ = args, unfiltered_args
     global DEBUG_PRINT = true
-    myVec = vec(1, 0, 0)
+    electricField = field(vec.ones(3, 2) as Vec3, 0.125)
     screenCenter = vec(love.graphics.getDimensions()) * 0.5
     screenCenter = screenCenter + vec.ones(2, 0.5) as Vec2
     miscDrawer = md()
+    miscDrawer.fieldConfig.screenMin = vec(0, 0)
+    miscDrawer.fieldConfig.screenMax = vec(love.graphics.getDimensions())
 end
 
 function love.keypressed(key: love.keyboard.KeyConstant, isRepeat: boolean)
@@ -21,21 +24,8 @@ function love.keypressed(key: love.keyboard.KeyConstant, isRepeat: boolean)
 end
 
 function love.update(dt: number)
-    if love.keyboard.isDown "space" then
-        myVec = vec.rotate(myVec, vec.posz, dt)
-    end
-    if love.keyboard.isDown "up" then
-        myVec.z = myVec.z + dt*10
-    elseif love.keyboard.isDown "down" then
-        myVec.z = myVec.z - dt*10
-    end
-    if love.keyboard.isDown "left" then
-        myVec = myVec * math.pow(0.5, dt)
-    elseif love.keyboard.isDown "right" then
-        myVec = myVec * math.pow(2, dt)
-    end
 end
 
 function love.draw()
-    miscDrawer:drawVecNormalized(screenCenter, myVec, {1, 1, 0.4})
+    miscDrawer:drawVecFieldNormalized(electricField, 0.5, {color={0.3, 1, 1}})
 end
