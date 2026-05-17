@@ -1,6 +1,5 @@
 local vec = require "vec"
 local md = require "miscdrawer"
-local inspect = require "inspect"
 
 local myVec: Vec3
 local screenCenter: Vec2
@@ -30,9 +29,13 @@ function love.update(dt: number)
     elseif love.keyboard.isDown "down" then
         myVec.z = myVec.z - dt*10
     end
+    if love.keyboard.isDown "left" then
+        myVec = myVec * math.pow(0.5, dt)
+    elseif love.keyboard.isDown "right" then
+        myVec = myVec * math.pow(2, dt)
+    end
 end
 
 function love.draw()
-    miscDrawer:drawVecNormalized(screenCenter, myVec)
-    -- love.graphics.line(screenCenter.x, screenCenter.y, 0, 0)
+    miscDrawer:drawVecNormalized(screenCenter, myVec, {1, 1, 0.4})
 end
