@@ -40,6 +40,7 @@ local interface VecModule
 
     project: function<NVec is Vec>(v: Vec, onto: NVec): NVec
     projectHyperplane: function(v: Vec, hyperplaneNormal: Vec): Vec
+    hadamard: function<NVec is Vec>(u: NVec, v: NVec): NVec
 
     metamethod __call: function(self, number): Vec1
     metamethod __call: function(self, number, number): Vec2
@@ -218,10 +219,8 @@ end
 local function updateNormalized(p: InternalVec)
     p.normalized = fromArray(p, p.dim, p.mag)
     if p.mag > 0 then
-        p.normalized = (p.normalized as Vec) / p.mag
+        p.normalized = p.normalized / p.mag
     end
-    -- Idempotent normalization
-    private[p.normalized].normalized = p.normalized
 end
 
 local function invalidateCache(v: Vec)
@@ -472,9 +471,8 @@ M = {
     end,
     round = function(v: Vec): Vec
         local new = M.zeros(v.dim)
-        local p = private[new]
         for i = 1, v.dim do
-            p[i] = round(v[i])
+            new[i] = round(v[i])
         end
         return new
     end,
@@ -570,10 +568,9 @@ M = {
         local p1, p2 = private[v1], private[v2]
         local r = M.zeros(p1.dim)
         local m = 1 - t
-        local pr = private[r]
 
         for i = 1, p1.dim do
-            rawset(pr, i, p1[i]*m + p2[i]*t)
+            r[i] = p1[i]*m + p2[i]*t
         end
 
         return r
@@ -584,6 +581,15 @@ M = {
     projectHyperplane = function(v: Vec, hyperplaneNormal: Vec): Vec
         local ontoNormal = M.project(v, hyperplaneNormal)
         return v - ontoNormal
+    end,
+    hadamard = function(u: Vec, v: Vec): Vec
+        u, v = coerceToSameDimension(u, v)
+        local new: {number} = {}
+        local pu, pv = private[u], private[v]
+        for i = 1, pu.dim do
+            new[i] = pu[i] * pv[i]
+        end
+        return fromArray(new, pu.dim, nil)
     end
 }
 

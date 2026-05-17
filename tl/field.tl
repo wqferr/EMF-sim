@@ -44,7 +44,6 @@ local cellGrad: StateAccessor
 local cellCurl: StateAccessor
 local deriv: function(x0: number, x1: number, step: number): number
 
-
 function Field:value(p: Vec3): Vec3
     local idx, cellLocalCoords = findCell(self, p)
     return lerpTensor(self, cellValue, idx, cellLocalCoords, 3) as Vec3
@@ -228,6 +227,7 @@ tensor_mt = {
 local interface FieldModule
     new: function(dimensions: Vec3, granularity: number): Field
     value: function(field: Field, p: Vec3): Vec3
+    contribute: function(field: Field, f: function(p: Vec3, value?: Vec3): Vec3)
     metamethod __call: function(self, dimensions: Vec3, granularity: number): Field
 end
 
@@ -236,7 +236,7 @@ local M: FieldModule = {
         local field = setmetatable({} as Field, field_mt)
         field.dimensions = vec.copy(dimensions) as Vec3
         field.granularity = vec.ones(3, granularity) as Vec3
-        field.values = {}
+        field.values = setmetatable({nidx=3}, tensor_mt)
 
         -- Normalize granularity according to new dimensions.
         -- This will always reduce or keep the space between
@@ -263,6 +263,22 @@ local M: FieldModule = {
     end,
     value = function(field: Field, p: Vec3): Vec3
         return field:value(p)
+    end,
+    contribute = function(field: Field, f: function(p: Vec3, value?: Vec3): Vec3)
+        for i = 1, #field.values do
+            local plane = field.values[i]
+            for j = 1, #plane do
+                local row = plane[j]
+                for k = 1, #row do
+                    local cell = row[k] as Cell
+                    local p = vec.hadamard(
+                        vec((i-1), (j-1), (k-1)),
+                        field.granularity
+                    )
+                    cell.next.value = cell.next.value + f(p, cell.current.value)
+                end
+            end
+        end
     end
 }
 setmetatable(M, {

@@ -74,21 +74,20 @@ function MiscDrawer:drawVecNormalized(screenPos: Vec2, v: Vec3, color?: {number}
     local zAlign = math.abs(v.z)
     zAlign = zAlign - config.minNormZForIntoOutofCircle
     if zAlign < 0 then
-        zAlign = 1
+        zAlign = 0
     end
     local rootZAlign = math.sqrt(zAlign)
     v = v * config.xYMaxRadius
-    v.y = -v.y
 
     local targetRadius = config.intoOutofMarkerMaxRadius * rootZAlign
     local flat = vec(v.x, v.y)
     local flatShrunk = vec.flatResize(flat, -targetRadius)
     local endPosFlat = screenPos + flatShrunk
 
-    local vAngle = 180 + math.atan2(flat.y, flat.x)
-    local openAngle = 360 * rootZAlign
-    local arcStart = vAngle + openAngle
-    local arcEnd = vAngle - openAngle
+    -- local vAngle = 180 + math.atan2(flat.y, flat.x)
+    -- local openAngle = 360 * rootZAlign
+    -- local arcStart = vAngle + openAngle
+    -- local arcEnd = vAngle - openAngle
     local circleCenter = screenPos + flat
     circleCenter = vec.round(circleCenter)
 
@@ -99,8 +98,8 @@ function MiscDrawer:drawVecNormalized(screenPos: Vec2, v: Vec3, color?: {number}
         circleCenter.x,
         circleCenter.y,
         targetRadius,
-        arcStart,
-        arcEnd,
+        0,
+        360,
         config.intoOutofCircleSegments
     )
 
@@ -139,9 +138,9 @@ function MiscDrawer:drawVecFieldNormalized(
         config = self.fieldConfig
     end
     for i = 1, config.nPoints[1] do
-        local tx = (i-1) / (config.nPoints[1]-1)
+        local tx = (i-1) / (config.nPoints[1])
         for j = 1, config.nPoints[2] do
-            local ty = (j-1) / (config.nPoints[2]-1)
+            local ty = (j-1) / (config.nPoints[2])
             local p = vec(
                 config.minP.x*(1-tx) + config.maxP.x*tx,
                 config.minP.y*(1-ty) + config.maxP.y*ty,
@@ -151,8 +150,8 @@ function MiscDrawer:drawVecFieldNormalized(
                 config.screenMin.x*(1-tx) + config.screenMax.x*tx,
                 config.screenMin.y*(1-ty) + config.screenMax.y*ty
             )
-            local fieldValue = f:value(p)
-            self:drawVecNormalized(screenPos, fieldValue, config.color)
+            local fv = f:value(p)
+            self:drawVecNormalized(screenPos, fv, config.color)
         end
     end
 end
