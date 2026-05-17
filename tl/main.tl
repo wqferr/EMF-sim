@@ -9,7 +9,7 @@ local mouseCharge: number
 local miscDrawer: MiscDrawer
 local mouseZ: number
 local cumDt: number
-local sparcity = 25
+local sparcity = 50
 local scale = 10
 function love.load(args: {string}, unfiltered_args: {string})
     local _, _ = args, unfiltered_args
@@ -41,10 +41,10 @@ function love.keypressed(key: love.keyboard.KeyConstant, isRepeat: boolean)
     end
 end
 
-local updateFreq = 0.025
+local updateInterval = 1 / 120
 function love.update(dt: number)
     cumDt = cumDt + dt
-    if cumDt >= updateFreq then
+    if cumDt >= updateInterval then
         local mouseXY = vec(love.mouse.getPosition()) / scale
         updateElectricField(vec(mouseXY.x, mouseXY.y, mouseZ))
         electricField:commit()
@@ -57,14 +57,14 @@ function love.wheelmoved(_dx: number, dy: number)
 end
 
 function love.draw()
-    for x = 0, electricField.dimensions.x, electricField.granularity.x do
-        local vx = scale*x
-        for y = 0, electricField.dimensions.y, electricField.granularity.y do
-            local vy = scale*y
-            -- love.graphics.line(0, vy, vx, vy)
-            -- love.graphics.line(vx, 0, vx, vy)
-        end
-    end
+    -- for x = 0, electricField.dimensions.x, electricField.granularity.x do
+    --     local vx = scale*x
+    --     for y = 0, electricField.dimensions.y, electricField.granularity.y do
+    --         local vy = scale*y
+    --         love.graphics.line(0, vy, vx, vy)
+    --         love.graphics.line(vx, 0, vx, vy)
+    --     end
+    -- end
     miscDrawer:drawVecFieldNormalized(
         electricField,
         0.5,
