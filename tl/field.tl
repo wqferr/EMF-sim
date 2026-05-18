@@ -4,6 +4,7 @@ local type FieldIndex = {integer, integer, integer}
 
 local interface Tensor is {Tensor}
     nidx: integer
+    metamethod __add: function(a: Tensor, b: Tensor): Tensor
 end
 
 local interface State
@@ -17,6 +18,7 @@ local interface Cell is Tensor
     idx: FieldIndex
     next: State
     current: State
+    old: State
 end
 
 global record Field
@@ -26,6 +28,7 @@ global record Field
 
     value: function(self, p: Vec3): Vec3
     curl: function(self, p: Vec3): Vec3
+    timeDeriv: function(self, p: Vec3, dt: number): Vec3
     numCells: function(self, axis: integer): integer
     setNext: function(self, p: Vec3, v: Vec3)
     commit: function(self)
@@ -42,6 +45,7 @@ local cellCommit: function(Cell)
 local cellValue: StateAccessor
 local cellGrad: StateAccessor
 local cellCurl: StateAccessor
+local cellOldValue: StateAccessor
 local deriv: function(x0: number, x1: number, step: number): number
 
 function Field:value(p: Vec3): Vec3
@@ -54,9 +58,24 @@ function Field:grad(p: Vec3): Vec3
     return lerpTensor(self, cellGrad, idx, cellLocalCoords, 3) as Vec3
 end
 
-function Field:curl(pos: Vec3): Vec3
-    local idx, cellLocalCoords = findCell(self, pos)
+function Field:curl(p: Vec3): Vec3
+    local idx, cellLocalCoords = findCell(self, p)
     return lerpTensor(self, cellCurl, idx, cellLocalCoords, 3) as Vec3
+end
+
+local function oldValue(f: Field, p: Vec3): Vec3
+    local idx, cellLocalCoords = findCell(f, p)
+    return lerpTensor(f, cellOldValue, idx, cellLocalCoords, 3) as Vec3
+end
+
+function Field:timeDeriv(p: Vec3, dt: number): Vec3
+    local old = oldValue(self, p)
+    local current = self:value(p)
+    return vec(
+        deriv(current.x, old.x, dt),
+        deriv(current.y, old.y, dt),
+        deriv(current.z, old.z, dt)
+    )
 end
 
 function Field:numCells(axis: integer): integer
@@ -73,7 +92,24 @@ function Field:numCells(axis: integer): integer
     return #t
 end
 
-function Field:setNext(p: Vec3, v: Vec3)
+function Field:globalSet(f: function(p: Vec3, value?: Vec3): Vec3)
+    for i = 1, #self.values do
+        local plane = self.values[i]
+        for j = 1, #plane do
+            local row = plane[j]
+            for k = 1, #row do
+                local cell = row[k] as Cell
+                local p = vec.hadamard(
+                    vec((i-1), (j-1), (k-1)),
+                    self.granularity
+                )
+                cell.next.value = cell.next.value + f(p, cell.current.value)
+            end
+        end
+    end
+end
+
+function Field:add(p: Vec3, contribution: Vec3)
     local index, localCoords = findCell(self, p)
     for i, x in vec.ipairs(localCoords) do
         if x > 0.5 then
@@ -81,7 +117,7 @@ function Field:setNext(p: Vec3, v: Vec3)
         end
     end
     local cell = self.values[index[1]][index[2]][index[3]] as Cell
-    cell.next = {value = v}
+    cell.next = {value = cell.next.value + contribution}
 end
 
 function Field:commit()
@@ -128,7 +164,8 @@ function newCell(idx: FieldIndex): Cell
     return {
         idx = idx,
         current = newState(),
-        next = newState()
+        next = newState(),
+        old = newState()
     }
 end
 
@@ -143,11 +180,15 @@ function atIndex(field: Field, idx: FieldIndex): Cell
 end
 
 function cellCommit(cell: Cell)
-    cell.next, cell.current = newState(), cell.next
+    cell.old, cell.current, cell.next = cell.current, cell.next, newState()
 end
 
 cellValue = function(field: Field, idx: FieldIndex): Vec3
     return atIndex(field, idx).current.value
+end
+
+cellOldValue = function(field: Field, idx: FieldIndex): Vec3
+    return atIndex(field, idx).old.value
 end
 
 cellGrad = function(field: Field, idx: FieldIndex): Vec3
@@ -227,7 +268,6 @@ tensor_mt = {
 local interface FieldModule
     new: function(dimensions: Vec3, granularity: number): Field
     value: function(field: Field, p: Vec3): Vec3
-    contribute: function(field: Field, f: function(p: Vec3, value?: Vec3): Vec3)
     metamethod __call: function(self, dimensions: Vec3, granularity: number): Field
 end
 
@@ -264,22 +304,6 @@ local M: FieldModule = {
     value = function(field: Field, p: Vec3): Vec3
         return field:value(p)
     end,
-    contribute = function(field: Field, f: function(p: Vec3, value?: Vec3): Vec3)
-        for i = 1, #field.values do
-            local plane = field.values[i]
-            for j = 1, #plane do
-                local row = plane[j]
-                for k = 1, #row do
-                    local cell = row[k] as Cell
-                    local p = vec.hadamard(
-                        vec((i-1), (j-1), (k-1)),
-                        field.granularity
-                    )
-                    cell.next.value = cell.next.value + f(p, cell.current.value)
-                end
-            end
-        end
-    end
 }
 setmetatable(M, {
     __call = function(_: FieldModule, dimensions: Vec3, granularity: number): Field
