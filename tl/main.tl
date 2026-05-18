@@ -1,6 +1,6 @@
 local vec = require "vec"
 local field = require "field"
-require "particle"
+local particle = require "particle"
 local md = require "miscdrawer"
 
 local updateElectricFields: function()
@@ -10,14 +10,14 @@ local commitFields: function()
 
 local updateParticles: function(dt: number)
 
-local electricFieldNoParticles: Field
-local electricFieldOnlyParticles: Field
-local electricFieldTotal: Field
+local electricField: Field
 local magneticField: Field
 local freeCurrentDensityField: Field
 local inducedCurrentField: Field
 
 local particles: {Particle}
+
+local mouseForceIntensity: number
 
 local miscDrawer: MiscDrawer
 local cumDt: number
@@ -38,20 +38,20 @@ function love.load(args: {string}, unfiltered_args: {string})
     local newField = function(): Field
         return field(fieldsGridSize, sparcity / fieldToScreenConversionFactor)
     end
-    electricFieldNoParticles = newField()
-    electricFieldOnlyParticles = newField()
-    electricFieldTotal = newField()
+    electricField = newField()
     magneticField = newField()
     inducedCurrentField = newField()
     freeCurrentDensityField = newField()
 
+    mouseForceIntensity = 600
+
     particles = {
-        {
-            mass = 1,
+        particle.new {
+            mass = 100,
             charge = 100,
-            radius = 3 * electricFieldNoParticles.granularity.x,
+            radius = electricField.granularity.x,
             position = vec(screenCenter.x, screenCenter.y, 0.5) / fieldToScreenConversionFactor,
-            velocity = vec(20, 0, 0)
+            velocity = vec(5, 0, 0)
         }
     }
 
@@ -99,38 +99,47 @@ local function drawField(f: Field, color: {number, number, number})
 end
 
 function love.draw()
-    for _, particle in ipairs(particles) do
-        local pos = particle.position * fieldToScreenConversionFactor
+    for _, p in ipairs(particles) do
+        local pos = p.position * fieldToScreenConversionFactor
         love.graphics.setColor({1, 1, 1})
-        love.graphics.circle("line", pos.x, pos.y, particle.radius)
+        love.graphics.circle("line", pos.x, pos.y, p.radius * fieldToScreenConversionFactor)
     end
-    drawField(electricFieldTotal, {1, 1, 0.4})
+    drawField(electricField, {1, 1, 0.4})
     drawField(magneticField, {0.4, 1, 1})
+    drawField(freeCurrentDensityField, {0.4, 0.6, 0.6})
+end
+
+local function applyMouseForce(p: Particle)
+    local mousePos = vec(love.mouse.getPosition()) / fieldToScreenConversionFactor
+    local mousePos3D = vec(mousePos.x, mousePos.y, 0.5)
+    local displacement = mousePos3D - p.position
+    if displacement.mag < p.radius then
+        return
+    end
+    local direction = (displacement).normalized
+
+    particle.addForce(p, direction * mouseForceIntensity)
 end
 
 function updateParticles(dt: number)
-    for _, particle in ipairs(particles) do
-        particle.position = particle.position + dt*particle.velocity
-        particle.velocity = particle.velocity + dt*electricFieldTotal:value(particle.position)
+    for _, p in ipairs(particles) do
+        particle.addForce(p, electricField:value(p.position))
+        particle.step(p, dt)
     end
+    applyMouseForce(particles[1])
 end
 
 function updateElectricFields()
-    electricFieldOnlyParticles:globalSet(
+    electricField:globalSet(
         function(p: Vec3, _fieldValue: Vec3): Vec3
             local total = vec(0, 0, 0)
-            for _, particle in ipairs(particles) do
-                local diff = p - particle.position
+            for _, part in ipairs(particles) do
+                local diff = p - part.position
                 if diff.magsqr > 0 then
-                    total = total + diff.normalized * particle.charge / diff.magsqr
+                    total = total + diff.normalized * part.charge / diff.magsqr
                 end
             end
             return total
-        end
-    )
-    electricFieldTotal:globalSet(
-        function(p: Vec3, _): Vec3
-            return electricFieldNoParticles:value(p) + electricFieldOnlyParticles:value(p)
         end
     )
 end
@@ -138,7 +147,7 @@ end
 function updateMagneticField(dt: number)
     magneticField:globalSet(
         function(p: Vec3, fieldValue: Vec3): Vec3
-            return fieldValue - electricFieldNoParticles:curl(p) * dt
+            return fieldValue - electricField:curl(p) * dt
         end
     )
 end
@@ -146,9 +155,9 @@ end
 local function roundDownToGridPoint(f: Field, p: Vec3): Vec3
     local gran = f.granularity
     return vec(
-        math.floor(p.x / gran.x),
-        math.floor(p.y / gran.y),
-        math.floor(p.z / gran.z)
+        gran.x * math.floor(p.x / gran.x),
+        gran.y * math.floor(p.y / gran.y),
+        gran.z * math.floor(p.z / gran.z)
     )
 end
 
@@ -156,23 +165,23 @@ local function roundUpToGridPoint(f: Field, p: Vec3): Vec3
     return roundDownToGridPoint(f, p + 0.5*f.granularity)
 end
 
-local function applyCurrentForParticle(particle: Particle)
-    local diag = vec(particle.radius, particle.radius, particle.radius)
+local function applyCurrentForPart(part: Particle)
+    local diag = vec(part.radius, part.radius, part.radius)
 
-    local minP = roundDownToGridPoint(freeCurrentDensityField, particle.position - diag)
-    local maxP = roundUpToGridPoint(freeCurrentDensityField, particle.position + diag)
+    local minP = roundDownToGridPoint(freeCurrentDensityField, part.position - diag)
+    local maxP = roundUpToGridPoint(freeCurrentDensityField, part.position + diag)
 
-    local radSqr = particle.radius * particle.radius
+    local radSqr = part.radius * part.radius
 
     -- Revisit this, might need to do some trig for the cross section area of the sphere
-    local particleCurrentDensity = particle.charge / particle.radius
+    local partCurrentDensity = part.charge / part.radius
     for x = minP.x, maxP.x, freeCurrentDensityField.granularity.x do
         for y = minP.y, maxP.y, freeCurrentDensityField.granularity.y do
             for z = minP.z, maxP.z, freeCurrentDensityField.granularity.z do
                 local p = vec(x, y, z)
-                local diff = particle.position - p
+                local diff = part.position - p
                 if diff.magsqr <= radSqr then
-                    freeCurrentDensityField:add(p, particleCurrentDensity * particle.velocity)
+                    freeCurrentDensityField:add(p, partCurrentDensity * part.velocity)
                 end
             end
         end
@@ -180,21 +189,19 @@ local function applyCurrentForParticle(particle: Particle)
 end
 
 function updateCurrentFields(dt: number)
-    inducedCurrentField:globalSet(
+    for _, part in ipairs(particles) do
+        applyCurrentForPart(part)
+    end
+    electricField:globalSet(
         function(p: Vec3, fieldValue: Vec3): Vec3
             return fieldValue + dt*(magneticField:curl(p) - freeCurrentDensityField:value(p))
         end
     )
-    for _, particle in ipairs(particles) do
-        applyCurrentForParticle(particle)
-    end
 end
 
 function commitFields()
     magneticField:commit()
-    electricFieldNoParticles:commit()
-    electricFieldOnlyParticles:commit()
-    electricFieldTotal:commit()
+    electricField:commit()
     inducedCurrentField:commit()
     freeCurrentDensityField:commit()
 end
