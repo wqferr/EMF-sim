@@ -48,6 +48,19 @@ local cellCurl: StateAccessor
 local cellOldValue: StateAccessor
 local deriv: function(x0: number, x1: number, step: number): number
 
+function Field:copyState()
+    for i = 1, #self.values do
+        local plane = self.values[i]
+        for j = 1, #plane do
+            local row = plane[j]
+            for k = 1, #row do
+                local cell = row[k] as Cell
+                cell.next = {value = cell.current.value}
+            end
+        end
+    end
+end
+
 function Field:value(p: Vec3): Vec3
     local idx, cellLocalCoords = findCell(self, p)
     return lerpTensor(self, cellValue, idx, cellLocalCoords, 3) as Vec3
@@ -103,7 +116,7 @@ function Field:globalSet(f: function(p: Vec3, value?: Vec3): Vec3)
                     vec((i-1), (j-1), (k-1)),
                     self.granularity
                 )
-                cell.next.value = cell.next.value + f(p, cell.current.value)
+                cell.next = {value = cell.next.value + f(p, cell.next.value)}
             end
         end
     end

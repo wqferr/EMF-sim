@@ -3,32 +3,34 @@ local field = require "field"
 local particle = require "particle"
 local md = require "miscdrawer"
 
-local updateElectricFields: function()
-local updateMagneticField: function(number)
-local updateCurrentFields: function(dt: number): Vec3
-local commitFields: function()
+local updateElectricField: function(dt: number)
+local updateMagneticField: function(dt: number)
 
 local updateParticles: function(dt: number)
 
 local electricField: Field
 local magneticField: Field
 local freeCurrentDensityField: Field
-local inducedCurrentField: Field
 
 local particles: {Particle}
 
 local mouseForceIntensity: number
 
+local start: boolean
+
 local miscDrawer: MiscDrawer
-local cumDt: number
+local cumulativeDt: number
 local sparcity = 50
 local fieldToScreenConversionFactor = 10
 local fieldsGridSize: Vec3
 function love.load(args: {string}, unfiltered_args: {string})
     local _, _ = args, unfiltered_args
+
+    start = false
+
     local dimensions = vec(love.graphics.getDimensions())
     local screenCenter = dimensions / 2
-    cumDt = 0
+    cumulativeDt = 0
     fieldsGridSize = vec(
         dimensions.x / fieldToScreenConversionFactor,
         dimensions.y / fieldToScreenConversionFactor,
@@ -40,18 +42,24 @@ function love.load(args: {string}, unfiltered_args: {string})
     end
     electricField = newField()
     magneticField = newField()
-    inducedCurrentField = newField()
     freeCurrentDensityField = newField()
 
     mouseForceIntensity = 600
 
     particles = {
         particle.new {
-            mass = 100,
-            charge = 100,
+            mass = 1000,
+            charge = 50,
             radius = electricField.granularity.x,
-            position = vec(screenCenter.x, screenCenter.y, 0.5) / fieldToScreenConversionFactor,
-            velocity = vec(5, 0, 0)
+            position = vec(screenCenter.x, dimensions.y * 0.9, 0.5) / fieldToScreenConversionFactor,
+            velocity = vec(5, 0, 2)
+        },
+        particle.new {
+            mass = 200,
+            charge = 1,
+            radius = electricField.granularity.x / 2,
+            position = vec(screenCenter.x, dimensions.y * 0.1, 0.5) / fieldToScreenConversionFactor,
+            velocity = vec(0, 0, 0)
         }
     }
 
@@ -68,19 +76,21 @@ function love.keypressed(key: love.keyboard.KeyConstant, isRepeat: boolean)
     local _ = isRepeat
     if key == "q" then
         love.event.quit()
+    elseif key == "space" then
+        start = true
     end
 end
 
 local updateInterval = 1 / 60
 function love.update(dt: number)
-    cumDt = cumDt + dt
-    if cumDt >= updateInterval then
-        updateParticles(cumDt)
-        updateMagneticField(cumDt)
-        updateElectricFields()
-        updateCurrentFields(cumDt)
-        commitFields()
-        cumDt = 0
+    cumulativeDt = cumulativeDt + dt
+    if cumulativeDt >= updateInterval then
+        if start then
+            updateParticles(cumulativeDt)
+            updateMagneticField(cumulativeDt)
+            updateElectricField(cumulativeDt)
+        end
+        cumulativeDt = 0
     end
 end
 
@@ -106,10 +116,12 @@ function love.draw()
     end
     drawField(electricField, {1, 1, 0.4})
     drawField(magneticField, {0.4, 1, 1})
-    drawField(freeCurrentDensityField, {0.4, 0.6, 0.6})
 end
 
 local function applyMouseForce(p: Particle)
+    do
+        return
+    end
     local mousePos = vec(love.mouse.getPosition()) / fieldToScreenConversionFactor
     local mousePos3D = vec(mousePos.x, mousePos.y, 0.5)
     local displacement = mousePos3D - p.position
@@ -121,35 +133,21 @@ local function applyMouseForce(p: Particle)
     particle.addForce(p, direction * mouseForceIntensity)
 end
 
+local function applyReturnalForce(p: Particle)
+    local screenCenter = vec(love.graphics.getDimensions()) / (2*fieldToScreenConversionFactor)
+    local displacement = vec(screenCenter.x, screenCenter.y, 0.5) - p.position
+    local direction = displacement.normalized
+    direction.y = 0
+    particle.addForce(p, direction * displacement.mag * 100)
+end
+
 function updateParticles(dt: number)
     for _, p in ipairs(particles) do
         particle.addForce(p, electricField:value(p.position))
         particle.step(p, dt)
     end
     applyMouseForce(particles[1])
-end
-
-function updateElectricFields()
-    electricField:globalSet(
-        function(p: Vec3, _fieldValue: Vec3): Vec3
-            local total = vec(0, 0, 0)
-            for _, part in ipairs(particles) do
-                local diff = p - part.position
-                if diff.magsqr > 0 then
-                    total = total + diff.normalized * part.charge / diff.magsqr
-                end
-            end
-            return total
-        end
-    )
-end
-
-function updateMagneticField(dt: number)
-    magneticField:globalSet(
-        function(p: Vec3, fieldValue: Vec3): Vec3
-            return fieldValue - electricField:curl(p) * dt
-        end
-    )
+    applyReturnalForce(particles[1])
 end
 
 local function roundDownToGridPoint(f: Field, p: Vec3): Vec3
@@ -188,20 +186,38 @@ local function applyCurrentForPart(part: Particle)
     end
 end
 
-function updateCurrentFields(dt: number)
+function updateElectricField(dt: number)
+    electricField:globalSet(
+        function(p: Vec3, _fieldValue: Vec3): Vec3
+            local total = vec(0, 0, 0)
+            for _, part in ipairs(particles) do
+                local diff = p - part.position
+                if diff.mag > part.radius then
+                    total = total + diff.normalized * part.charge / diff.magsqr
+                end
+            end
+            return total
+        end
+    )
     for _, part in ipairs(particles) do
         applyCurrentForPart(part)
     end
+    freeCurrentDensityField:commit()
     electricField:globalSet(
         function(p: Vec3, fieldValue: Vec3): Vec3
+            -- TODO permeability constant and the other one
             return fieldValue + dt*(magneticField:curl(p) - freeCurrentDensityField:value(p))
         end
     )
+    electricField:commit()
 end
 
-function commitFields()
+function updateMagneticField(dt: number)
+    -- magneticField:copyState()
+    magneticField:globalSet(
+        function(p: Vec3, fieldValue: Vec3): Vec3
+            return fieldValue - electricField:curl(p) * dt
+        end
+    )
     magneticField:commit()
-    electricField:commit()
-    inducedCurrentField:commit()
-    freeCurrentDensityField:commit()
 end
